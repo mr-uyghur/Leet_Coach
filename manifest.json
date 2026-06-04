@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "LeetCode Coach",
+  "version": "0.1.0",
+  "description": "AI-powered Socratic tutor for LeetCode problems",
+
+  "permissions": ["sidePanel", "storage", "scripting", "activeTab"],
+
+  "host_permissions": [
+    "*://leetcode.com/problems/*",
+    "http://localhost:11434/*",
+    "http://localhost:1234/*"
+  ],
+
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["*://leetcode.com/problems/*"],
+      "js": ["src/content/index.ts"]
+    }
+  ],
+
+  "side_panel": {
+    "default_path": "src/sidebar/index.html"
+  },
+
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["page-script.js"],
+      "matches": ["*://leetcode.com/problems/*"]
+    }
+  ]
+}
