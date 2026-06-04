@@ -178,7 +178,7 @@ describe('hydrateConversation', () => {
     ]
     useChatStore.getState().setProblem(PROBLEM_A)
     useChatStore.getState().setProblem(PROBLEM_B) // triggers hydrating=true
-    useChatStore.getState().hydrateConversation(saved)
+    useChatStore.getState().hydrateConversation({ messages: saved, hintTier: 0, solutionUnlocked: false })
 
     const s = useChatStore.getState()
     expect(s.messages).toHaveLength(2)

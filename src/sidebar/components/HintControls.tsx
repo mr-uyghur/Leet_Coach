@@ -4,7 +4,7 @@
 //   - Button N is enabled only if hintTier >= N-1 (must be at previous tier first).
 //   - All buttons are disabled in 'review' and 'edgecases' modes.
 //   - Active tier button shows highlighted orange.
-//   - Tier is monotonically increasing — clicking a lower tier is a no-op (button inactive).
+//   - Tier advances forward via buttons; ↺ reset button (visible when tier > 0) returns to tier 0.
 //
 // IMPORTANT: The button labels and section header are imported from shared/constants.ts.
 // The coaching prompt's Anti-Spoiler decline line references the same constants —
@@ -35,13 +35,25 @@ export default function HintControls() {
         <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
           {HINT_PANEL_LABEL}
         </span>
-        <span className="text-[10px] text-gray-600 italic">
-          {disabled
-            ? 'Not applicable in this mode'
-            : activeTier
-            ? activeTier.description
-            : 'Unlock a hint level below'}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-600 italic">
+            {disabled
+              ? 'Not applicable in this mode'
+              : activeTier
+              ? activeTier.description
+              : 'Unlock a hint level below'}
+          </span>
+          {hintTier > 0 && (
+            <button
+              onClick={() => setHintTier(0)}
+              disabled={disabled}
+              title="Reset hint level"
+              className="text-[10px] text-gray-500 hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors leading-none"
+            >
+              ↺
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-1">

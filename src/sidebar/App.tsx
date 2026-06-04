@@ -53,16 +53,18 @@ export default function App() {
   // Read problem context from the store (set by useProblem)
   const currentProblem = useChatStore((s) => s.currentProblem)
   const messages = useChatStore((s) => s.messages)
+  const hintTier = useChatStore((s) => s.hintTier)
+  const solutionUnlocked = useChatStore((s) => s.solutionUnlocked)
   const isConversationHydrating = useChatStore((s) => s.isConversationHydrating)
 
   useEffect(() => {
     const slug = currentProblem?.slug
     if (!slug || isConversationHydrating) return
 
-    saveConversation(slug, messages).catch((err) => {
+    saveConversation(slug, { messages, hintTier, solutionUnlocked }).catch((err) => {
       console.error('[LCCoach Panel] Failed to save conversation:', err)
     })
-  }, [currentProblem?.slug, messages, isConversationHydrating])
+  }, [currentProblem?.slug, messages, hintTier, solutionUnlocked, isConversationHydrating])
 
   if (!isLoaded) {
     // Avoid flash before settings are hydrated from storage

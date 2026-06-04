@@ -110,7 +110,7 @@ Target local models (RTX 5070 Ti / 16GB VRAM — performance is not a constraint
 | 3 | Pseudocode | Step-by-step approach in plain English. No code. |
 | — | Solution Gate | Full solution, only after explicit click + confirmation. Bypasses the Anti-Spoiler Rule by design. |
 
-Tier is user-controlled and monotonically increases (cannot go backward). Hint controls are disabled in Code Review and Edge Cases modes.
+Tier advances forward via the tier buttons. A ↺ reset button (visible when tier > 0) returns the tier to 0; the conversation is preserved. Hint controls are disabled in Code Review and Edge Cases modes.
 
 ---
 

@@ -7,6 +7,7 @@
 
 import { create } from 'zustand'
 import type { Message, HintTier, Mode } from '../../shared/types'
+import type { SavedConversationState } from '../../background/storage'
 import type { ProblemUpdatedMessage } from '../../shared/messages'
 
 interface ChatState {
@@ -39,7 +40,7 @@ interface ChatState {
   finalizeMessage: (thinkingContent?: string) => void
   setError: (err: string) => void
   setProblem: (payload: ProblemUpdatedMessage['payload']) => void
-  hydrateConversation: (messages: Message[]) => void
+  hydrateConversation: (state: SavedConversationState) => void
   finishConversationHydration: () => void
   /** Called when the problem slug changes; clears conversation and resets coaching state. */
   resetConversation: () => void
@@ -143,9 +144,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }))
   },
 
-  hydrateConversation: (messages) => {
+  hydrateConversation: ({ messages, hintTier, solutionUnlocked }) => {
     set({
       messages,
+      hintTier,
+      solutionUnlocked,
       inFlightContent: '',
       inFlightThinking: '',
       isStreaming: false,

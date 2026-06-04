@@ -33,12 +33,12 @@ export function useProblem() {
         if (!shouldLoadConversation) return
 
         loadConversation(payload.slug)
-          .then((savedMessages) => {
+          .then((savedState) => {
             const currentSlug = useChatStore.getState().currentProblem?.slug
             if (currentSlug !== payload.slug) return
 
-            if (savedMessages) {
-              hydrateConversation(savedMessages)
+            if (savedState) {
+              hydrateConversation(savedState)
             } else {
               finishConversationHydration()
             }

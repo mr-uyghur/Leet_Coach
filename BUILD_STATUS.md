@@ -1,6 +1,6 @@
 # Build Status
 
-## Current Phase: Phase 7 — Test foundation + hint system fixes ✅ Complete
+## Current Phase: Phase 7 — Test foundation + hint system fixes ✅ Complete + hint persistence hotfix
 
 > **Session prompt (use this every time you open a new window):**
 > "Read `CLAUDE.md`, then `BUILD_STATUS.md`, then `BUILD_PROMPT.md`. Follow the build status to find the current phase. Plan what you're about to build, then build it. Stop at the checkpoint and wait for my confirmation before continuing."
@@ -24,6 +24,27 @@
 ## Checkpoint Log
 
 _Updated after each phase is verified._
+
+### Hint Persistence Hotfix — ✅ Complete (2026-06-04) — Automated verification passed; manual Chrome check recommended
+
+**Bug fixed:** `hintTier` and `solutionUnlocked` were never persisted to `chrome.storage.local`. Closing and reopening the side panel restored conversation messages but reset hint level to 0 and `solutionUnlocked` to false — making the AI revert to Tier 0 coaching and hiding the SolutionGate even if users had reached Tier 3.
+
+**Changed files:**
+- `src/background/storage.ts`: Added `SavedConversationState` type `{ messages, hintTier, solutionUnlocked }`. Updated `saveConversation` to persist all three. Updated `loadConversation` to return the full state with backward compat for old bare `Message[]` format.
+- `src/sidebar/stores/chatStore.ts`: `hydrateConversation` now accepts `SavedConversationState` and restores `hintTier` + `solutionUnlocked` alongside messages.
+- `src/sidebar/App.tsx`: Subscribes to `hintTier` and `solutionUnlocked`; includes them in the `saveConversation` dep array and call.
+- `src/sidebar/hooks/useProblem.ts`: Passes full `savedState` (not just messages) to `hydrateConversation`.
+- `src/sidebar/stores/chatStore.test.ts`: Updated one test call to match the new signature.
+
+**Verified:**
+- `npm run typecheck` — zero TS errors
+- `npm run test` — 72/72 tests pass
+- `npm run build` — exits 0, postbuild patches applied
+
+**Manual Chrome check recommended:**
+- Set hint level to Strategy, send a message, close and reopen the panel — AI should still behave at Strategy level and buttons should show Strategy as the active tier.
+- Reach Tier 3 (Pseudocode), close and reopen — SolutionGate should still be visible.
+- Navigate to a different problem — hintTier should reset to 0, then restore if you return to the first problem.
 
 ### Phase 7 — ✅ Complete (2026-06-04) — Automated verification passed; manual Chrome check recommended
 
