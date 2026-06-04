@@ -35,6 +35,3 @@ pnpm-debug.log*
 
 # TypeScript Cache
 *.tsbuildinfo
-
-# Markdown Files (Ignored per request)
-*.md
