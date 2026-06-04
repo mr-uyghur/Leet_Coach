@@ -14,6 +14,7 @@ import { PANEL_PORT_NAME } from '../shared/messages'
 import { callModel } from './api'
 import type { ModelRequest } from '../shared/types'
 import { PROVIDERS } from '../shared/constants'
+import { selectSystemPrompt } from '../shared/prompts/index'
 
 // In-memory cache — lost when the service worker is killed after ~30s idle.
 // The on-connect re-request pattern (below) compensates for this.
@@ -77,10 +78,18 @@ chrome.runtime.onConnect.addListener((port) => {
 
     const chatMsg = msg as ChatRequestMessage
 
-    // TODO Phase 5: replace this placeholder with full prompt selection from
-    // src/shared/prompts/ based on chatMsg.payload.mode and chatMsg.payload.hintTier.
-    const systemPrompt =
-      'You are a helpful coding assistant. Answer the user\'s question clearly and concisely.'
+    // Select the correct system prompt for the current mode, hint tier, and problem context.
+    // All prompt logic lives in src/shared/prompts/index.ts — the background only routes.
+    const { mode, hintTier, solutionUnlocked, problemContext } = chatMsg.payload
+    const systemPrompt = selectSystemPrompt({
+      mode,
+      hintTier,
+      solutionUnlocked,
+      problem: problemContext,
+    })
+    console.log(
+      `[LCCoach BG] System prompt selected: mode=${mode}, tier=${hintTier}, solutionUnlocked=${solutionUnlocked}, length=${systemPrompt.length}`
+    )
 
     const request: ModelRequest = {
       provider: chatMsg.payload.settings.provider,
@@ -93,7 +102,7 @@ chrome.runtime.onConnect.addListener((port) => {
       systemPrompt,
       stream: true,
       // Thinking mode off for Edge Cases (generative, no benefit from reasoning chain).
-      thinkingMode: chatMsg.payload.mode !== 'edgecases',
+      thinkingMode: mode !== 'edgecases',
     }
 
     let thinkingAccumulator = ''

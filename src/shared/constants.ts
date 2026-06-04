@@ -1,5 +1,18 @@
-// Model max-context sizes, provider configuration, and streaming constants.
+// Model max-context sizes, provider configuration, streaming constants, and UI label constants.
 // Token estimate: characters ÷ 4 (cheap approximation).
+//
+// UI LABEL CONSTANTS — single source of truth consumed by both the prompt builder and the UI
+// components. Any rename of a control MUST go through these constants so that the AI's decline
+// line always matches what the user actually sees on screen.
+
+/** The section header rendered above the hint tier buttons. */
+export const HINT_PANEL_LABEL = 'Hint Level' as const
+
+/** Labels for the three hint tier buttons, in tier order (index 0 = Tier 1 = Nudge). */
+export const HINT_TIER_LABELS = ['Nudge', 'Strategy', 'Pseudocode'] as const
+
+/** Label on the "Show Full Solution" gate button (visible only at Tier 3). */
+export const SOLUTION_GATE_LABEL = 'Show Full Solution' as const
 
 // Anthropic API version header — required on every request.
 export const ANTHROPIC_VERSION = '2023-06-01' as const
@@ -19,6 +32,7 @@ export const MAX_CONTEXT_TOKENS: Record<string, number> = {
   'qwen3:14b': 32_000,
   'qwen3:30b-a3b': 32_000,
   'gemma3:27b': 8_000,
+  'gemma-4-e4b': 128_000,
 }
 
 export const PROVIDERS = {
@@ -32,10 +46,10 @@ export const PROVIDERS = {
   },
   lmstudio: {
     baseUrl: 'http://localhost:1234/v1/chat/completions',
-    defaultModel: 'qwen3:14b',
+    defaultModel: 'gemma-4-e4b',
   },
 } as const
 
-export const DEFAULT_PROVIDER = 'ollama' as const
+export const DEFAULT_PROVIDER = 'lmstudio' as const
 
-export const AVAILABLE_LOCAL_MODELS = ['qwen3:14b', 'qwen3:30b-a3b', 'gemma3:27b'] as const
+export const AVAILABLE_LOCAL_MODELS = ['gemma-4-e4b', 'qwen3:14b', 'qwen3:30b-a3b', 'gemma3:27b'] as const

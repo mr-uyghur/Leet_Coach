@@ -12,14 +12,31 @@ import { extractProblem } from './extractors/problem'
 import { extractCode } from './extractors/code'
 import type { ProblemUpdatedMessage } from '../shared/messages'
 
-// Delay after a navigation event before extracting — LeetCode's React app needs time
+// Delay after a navigation event before extracting. LeetCode's React app needs time
 // to render the new problem's DOM and initialize Monaco.
 const NAV_EXTRACT_DELAY_MS = 1000
-// Delay on initial page load — Monaco may not be ready immediately.
+// Delay on initial page load. Monaco may not be ready immediately.
 const INITIAL_EXTRACT_DELAY_MS = 1500
 
 let currentSlug = ''
 let extractTimer: ReturnType<typeof setTimeout> | null = null
+
+function warnRuntimeUnavailable(err?: unknown): void {
+  console.warn(
+    '[LCCoach] Extension context is unavailable; refresh the LeetCode tab after reloading the extension.',
+    err
+  )
+}
+
+function getRuntime(): typeof chrome.runtime | null {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.id) return null
+    return chrome.runtime
+  } catch (err) {
+    warnRuntimeUnavailable(err)
+    return null
+  }
+}
 
 function getSlug(): string {
   const match = window.location.pathname.match(/\/problems\/([^/]+)/)
@@ -29,7 +46,7 @@ function getSlug(): string {
 async function doExtract(): Promise<void> {
   const problem = extractProblem()
 
-  // Always send the problem, even if code extraction fails — partial context is better than none.
+  // Always send the problem, even if code extraction fails. Partial context is better than none.
   let code = ''
   try {
     code = await extractCode()
@@ -40,10 +57,45 @@ async function doExtract(): Promise<void> {
   const payload: ProblemUpdatedMessage['payload'] = { ...problem, code }
   console.log('[LCCoach] Sending PROBLEM_UPDATED:', payload)
 
-  chrome.runtime.sendMessage({ type: 'PROBLEM_UPDATED', payload }).catch((err) => {
-    // Background SW may not be ready on very first load — not a hard failure.
+  await sendProblemUpdated(payload)
+}
+
+async function sendProblemUpdated(payload: ProblemUpdatedMessage['payload']): Promise<void> {
+  const runtime = getRuntime()
+  if (!runtime) {
+    warnRuntimeUnavailable()
+    return
+  }
+
+  try {
+    await runtime.sendMessage({ type: 'PROBLEM_UPDATED', payload })
+  } catch (err) {
+    // Background SW may not be ready on first load, and stale tabs keep old
+    // content scripts after extension reloads. Neither should crash the page.
     console.warn('[LCCoach] sendMessage PROBLEM_UPDATED failed:', err)
-  })
+  }
+}
+
+function registerRequestExtractListener(): void {
+  const runtime = getRuntime()
+  if (!runtime) {
+    warnRuntimeUnavailable()
+    return
+  }
+
+  try {
+    // Background sends REQUEST_EXTRACT when the panel connects and the SW cache may be stale.
+    runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg.type === 'REQUEST_EXTRACT') {
+        doExtract()
+          .then(() => sendResponse({ ok: true }))
+          .catch(() => sendResponse({ ok: false }))
+        return true // keep message channel open for async sendResponse
+      }
+    })
+  } catch (err) {
+    warnRuntimeUnavailable(err)
+  }
 }
 
 function scheduleExtract(delayMs: number): void {
@@ -59,7 +111,7 @@ function handleNavigation(): void {
 }
 
 export function initBridge(): void {
-  // Patch history methods — LeetCode's SPA router calls these on problem navigation.
+  // Patch history methods. LeetCode's SPA router calls these on problem navigation.
   const origPushState = history.pushState.bind(history)
   const origReplaceState = history.replaceState.bind(history)
 
@@ -83,17 +135,9 @@ export function initBridge(): void {
     obs.observe(titleEl, { childList: true })
   }
 
-  // Background sends REQUEST_EXTRACT when the panel connects and the SW cache may be stale.
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg.type === 'REQUEST_EXTRACT') {
-      doExtract()
-        .then(() => sendResponse({ ok: true }))
-        .catch(() => sendResponse({ ok: false }))
-      return true // keep message channel open for async sendResponse
-    }
-  })
+  registerRequestExtractListener()
 
-  // Initial extraction — wait for Monaco and the problem DOM to render.
+  // Initial extraction. Wait for Monaco and the problem DOM to render.
   currentSlug = getSlug()
   if (currentSlug) {
     scheduleExtract(INITIAL_EXTRACT_DELAY_MS)

@@ -35,3 +35,8 @@ pnpm-debug.log*
 
 # TypeScript Cache
 *.tsbuildinfo
+
+# Project Notes
+BUILD_PROMPT.md
+BUILD_STATUS.md
+CLAUDE.md

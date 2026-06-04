@@ -2,6 +2,19 @@
 
 export type Provider = 'anthropic' | 'ollama' | 'lmstudio'
 
+// Canonical shape for a LeetCode problem as extracted by the content script.
+// Used in messages.ts (PROBLEM_UPDATED / CHAT_REQUEST payloads) and by prompt builders.
+// Defined here (not in messages.ts) to avoid circular imports: messages.ts imports types.ts,
+// so types.ts must not import from messages.ts.
+export interface ProblemContext {
+  slug: string
+  title: string
+  statement: string
+  constraints: string
+  difficulty: string
+  code: string
+}
+
 export type HintTier = 0 | 1 | 2 | 3
 
 export type Mode = 'socratic' | 'review' | 'edgecases'

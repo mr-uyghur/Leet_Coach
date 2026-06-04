@@ -4,7 +4,7 @@
  * Usage:
  *   ANTHROPIC_API_KEY=sk-ant-... node scripts/test-providers.mjs
  *
- * Requires Ollama running with qwen3:14b pulled, and/or LM Studio running with a model loaded.
+ * Requires LM Studio running with gemma-4-e4b loaded.
  * Skips any provider that isn't reachable rather than hard-failing.
  */
 
@@ -172,8 +172,6 @@ async function testOpenAICompat(label, baseUrl, model) {
         ],
         stream: true,
       }),
-      // 5-second connect timeout
-      signal: AbortSignal.timeout(5000),
     })
   } catch (err) {
     console.log(`   ⏭  Skipped — not reachable (${err.message})`)
@@ -257,7 +255,6 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? ''
 
 selfTestParser()
 await testAnthropic(ANTHROPIC_KEY)
-await testOpenAICompat('Ollama qwen3:14b', 'http://localhost:11434/v1/chat/completions', 'qwen3:14b')
-await testOpenAICompat('LM Studio qwen3:14b', 'http://localhost:1234/v1/chat/completions', 'qwen3:14b')
+await testOpenAICompat('LM Studio gemma-4-e4b', 'http://localhost:1234/v1/chat/completions', 'gemma-4-e4b')
 
 console.log('\n✅ Phase 3 verification complete.\n')

@@ -1,6 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
 
 * {
   box-sizing: border-box;
@@ -8,18 +19,114 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: #1a1a1a;
   color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 2px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── Markdown prose in assistant messages ───────────────────────────────── */
+
+.prose-content {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.625;
+  color: #e5e7eb; /* gray-200 */
+}
+
+.prose-content p {
+  margin: 0 0 0.5rem 0;
+}
+
+.prose-content p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-content ul,
+.prose-content ol {
+  padding-left: 1.25rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.prose-content li {
+  margin: 0.15rem 0;
+}
+
+.prose-content h1,
+.prose-content h2,
+.prose-content h3,
+.prose-content h4 {
+  font-weight: 600;
+  color: #f9fafb;
+  margin: 0.75rem 0 0.25rem 0;
+  line-height: 1.3;
+}
+
+.prose-content h1 { font-size: 1rem; }
+.prose-content h2 { font-size: 0.9375rem; }
+.prose-content h3, .prose-content h4 { font-size: 0.875rem; }
+
+.prose-content hr {
+  border-color: rgba(255, 255, 255, 0.1);
+  margin: 0.75rem 0;
+}
+
+.prose-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  margin: 0.5rem 0;
+}
+
+.prose-content th,
+.prose-content td {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+}
+
+.prose-content th {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 600;
+  color: #FFA116;
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-slide-in {
+  animation: fadeSlideIn 0.2s ease-out forwards;
+}
+
+/* Streaming dots */
+@keyframes pulse {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40%           { opacity: 1;   transform: scale(1); }
+}
+
+.animate-pulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.delay-75  { animation-delay: 0.16s; }
+.delay-150 { animation-delay: 0.32s; }

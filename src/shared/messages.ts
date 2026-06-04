@@ -1,21 +1,14 @@
 // Typed discriminated union for all chrome.runtime messages.
 // TODO: Phase 3 — finalize CHAT_REQUEST / CHAT_DELTA / CHAT_DONE / CHAT_ERROR payloads
 
-import type { Message, Settings } from './types'
+import type { Message, Settings, ProblemContext } from './types'
 
 // Shared constant — used by both background and sidebar to avoid silent string mismatch.
 export const PANEL_PORT_NAME = 'panel' as const
 
 export interface ProblemUpdatedMessage {
   type: 'PROBLEM_UPDATED'
-  payload: {
-    slug: string
-    title: string
-    statement: string
-    constraints: string
-    difficulty: string
-    code: string
-  }
+  payload: ProblemContext
 }
 
 export interface ChatRequestMessage {
@@ -23,7 +16,7 @@ export interface ChatRequestMessage {
   payload: {
     messages: Message[]
     settings: Settings
-    problemContext: ProblemUpdatedMessage['payload']
+    problemContext: ProblemContext
     hintTier: 0 | 1 | 2 | 3
     mode: 'socratic' | 'review' | 'edgecases'
     solutionUnlocked: boolean
