@@ -23,6 +23,21 @@ let panelPort: chrome.runtime.Port | null = null
 let activeAbortController: AbortController | null = null
 
 // ---------------------------------------------------------------------------
+// Extension action — open the side panel directly from the toolbar icon
+// ---------------------------------------------------------------------------
+
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id == null) {
+    console.warn('[LCCoach BG] Extension action clicked without an active tab id')
+    return
+  }
+
+  chrome.sidePanel.open({ tabId: tab.id }).catch((err) => {
+    console.error('[LCCoach BG] Failed to open side panel:', err)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // PROBLEM_UPDATED — from content script
 // ---------------------------------------------------------------------------
 
