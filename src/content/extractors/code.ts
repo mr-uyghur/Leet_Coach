@@ -9,7 +9,12 @@ import { SELECTORS } from './selectors'
 
 const MONACO_REQUEST_TIMEOUT_MS = 3000
 
+/** Monotonically increasing counter; each getPrimaryCode() call gets a unique id. */
+let _codeRequestCounter = 0
+
 function getPrimaryCode(): Promise<string> {
+  const requestId = `code-${++_codeRequestCounter}`
+
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       window.removeEventListener('message', handler)
@@ -19,6 +24,8 @@ function getPrimaryCode(): Promise<string> {
     function handler(event: MessageEvent) {
       if (event.source !== window) return
       if (!event.data || event.data.type !== 'LC_CODE_RESULT') return
+      // Ignore responses from a previous (timed-out) call arriving late
+      if (event.data.requestId !== requestId) return
       clearTimeout(timeout)
       window.removeEventListener('message', handler)
       if (event.data.error) {
@@ -29,7 +36,7 @@ function getPrimaryCode(): Promise<string> {
     }
 
     window.addEventListener('message', handler)
-    window.postMessage({ type: 'LC_GET_CODE' }, '*')
+    window.postMessage({ type: 'LC_GET_CODE', requestId }, '*')
   })
 }
 

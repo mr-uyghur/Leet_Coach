@@ -319,8 +319,11 @@ async function* callOpenAICompatible(
   // Qwen3 thinking control: pass chat_template_kwargs to disable <think> output when
   // thinkingMode is explicitly false (Edge Cases mode per the task-conditional rule).
   // When thinkingMode is true or undefined, let Qwen3 decide (thinking on by default).
+  //
+  // NOTE: chat_template_kwargs is Ollama-specific. LM Studio uses a standard OpenAI-compat
+  // server that may reject unknown extra body fields with HTTP 400. Guard to Ollama only.
   const extraBody: Record<string, unknown> = {}
-  if (request.thinkingMode === false) {
+  if (request.thinkingMode === false && request.provider === 'ollama') {
     extraBody['chat_template_kwargs'] = { enable_thinking: false }
   }
 

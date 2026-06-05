@@ -2,7 +2,7 @@ export function Popup() {
   function openPanel() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0]
-      if (tab?.id) {
+      if (tab?.id != null) {
         chrome.sidePanel.open({ tabId: tab.id })
       }
     })

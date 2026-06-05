@@ -25,6 +25,31 @@
 
 _Updated after each phase is verified._
 
+### Phase 8 — ✅ Complete (2026-06-04) — Automated verification passed; manual Chrome check recommended
+
+**Built:**
+- Removed TEST_PROVIDERS debug handler from production background (High H2)
+- `resetHints()` store action — ↺ button now clears `solutionUnlocked` too; button visible whenever `hintTier > 0 || solutionUnlocked` (High H1)
+- `requestId` added to all CHAT_* messages; background uses `AbortController` to cancel in-flight requests on new CHAT_REQUEST; panel ignores stale chunks by requestId (Critical C1 + High H4)
+- Anthropic SSE: added `incomplete` line buffer matching OpenAI-compat path (High H3)
+- OpenAI-compat: parse `incomplete` buffer before `parser.flush()` at natural stream end (High H5)
+- Monaco `LC_GET_CODE` / `LC_CODE_RESULT` now include a requestId to prevent stale response race (Medium M1)
+- `chat_template_kwargs` guarded to Ollama only — LM Studio no longer receives it in Edge Cases mode (Medium M2)
+- postbuild chunk detection improved — ES module `import` prefix as primary signal (Medium M3)
+- Popup `tab.id` check corrected to `!= null` (Low L2); stale Phase 3 TODO removed from messages.ts (Low L3)
+- 20 new tests (92 total across 7 test files)
+
+**Verified:**
+- `npm run typecheck` — zero TS errors
+- `npm run test` — 92/92 tests pass
+- `npm run build` — exits 0, postbuild patches applied
+
+**Manual Chrome check recommended:**
+- Navigate to Problem A → start a chat → immediately navigate to Problem B → Problem B should show clean state (no Problem A content)
+- Reach Tier 3, unlock solution, click ↺ reset → AI should return to Socratic coaching (Tier 0, no solution)
+- Set Tier 3, unlock solution, close/reopen panel → solution should still be unlocked (persistence not broken by the fix)
+- Use LM Studio in Edge Cases mode — should not fail with HTTP 400 errors
+
 ### Phase 8 prep — ✅ Complete (2026-06-04) — Review complete, issue list + fix plan written
 
 **Review scope:** Full `src/` audit (all 38 TypeScript/TSX files), manifest, public/page-script.js, scripts/postbuild.js.

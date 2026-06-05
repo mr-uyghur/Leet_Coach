@@ -29,8 +29,12 @@ const assets = readdirSync(resolve(dist, 'assets'));
 const indexChunks = assets.filter(f => /^index\.ts-.+\.js$/.test(f));
 
 const bgChunk = indexChunks.find(f => {
-  const src = readFileSync(resolve(dist, 'assets', f), 'utf8');
-  return !src.trimStart().startsWith('(function(');
+  const src = readFileSync(resolve(dist, 'assets', f), 'utf8').trimStart();
+  // Primary signal: ES module (background) begins with a top-level import statement.
+  // Content scripts are bundled as IIFEs and will not start with 'import'.
+  if (src.startsWith('import ') || src.startsWith('import{')) return true;
+  // Fallback: not an IIFE (handles edge cases where Vite's output format changes)
+  return !src.startsWith('(function(');
 });
 
 if (!bgChunk) {
