@@ -239,13 +239,16 @@ async function* callAnthropic(request: ModelRequest): AsyncIterable<ModelStreamC
 
   let eventType = ''
   let dataBuffer = ''
+  let incomplete = '' // Holds a partial SSE line that was split across read() boundaries
 
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
 
     const text = decoder.decode(value, { stream: true })
-    const lines = text.split('\n')
+    const lines = (incomplete + text).split('\n')
+    // Last element may be an incomplete line — hold it for the next read.
+    incomplete = lines.pop() ?? ''
 
     for (const line of lines) {
       if (line.startsWith('event:')) {
@@ -273,6 +276,23 @@ async function* callAnthropic(request: ModelRequest): AsyncIterable<ModelStreamC
         eventType = ''
         dataBuffer = ''
       }
+    }
+  }
+
+  // Flush any incomplete SSE line buffered at natural stream end
+  if (incomplete.startsWith('event:')) {
+    eventType = incomplete.slice(6).trim()
+  } else if (incomplete.startsWith('data:')) {
+    dataBuffer = incomplete.slice(5).trim()
+    if (eventType === 'content_block_delta' && dataBuffer) {
+      try {
+        const parsed = JSON.parse(dataBuffer) as {
+          delta?: { type: string; text?: string }
+        }
+        if (parsed.delta?.type === 'text_delta' && parsed.delta.text) {
+          yield { type: 'content', text: parsed.delta.text }
+        }
+      } catch { /* malformed — skip */ }
     }
   }
 }
@@ -363,7 +383,27 @@ async function* callOpenAICompatible(
     }
   }
 
-  // Flush at natural stream end (no [DONE] line)
+  // Parse any incomplete SSE line buffered at natural stream end (no [DONE] line).
+  // Some providers terminate the stream without a [DONE] sentinel; the last data: line
+  // may still be sitting in `incomplete` if the connection closed without a trailing '\n'.
+  if (incomplete.startsWith('data:')) {
+    const data = incomplete.slice(5).trim()
+    if (data && data !== '[DONE]') {
+      try {
+        const parsed = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string | null } }>
+        }
+        const content = parsed.choices?.[0]?.delta?.content
+        if (content) {
+          for (const chunk of parser.feed(content)) {
+            yield chunk
+          }
+        }
+      } catch { /* malformed — skip */ }
+    }
+  }
+
+  // Flush the think-tag parser at natural stream end
   for (const chunk of parser.flush()) {
     yield chunk
   }
