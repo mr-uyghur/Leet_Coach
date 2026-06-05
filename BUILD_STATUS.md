@@ -25,6 +25,20 @@
 
 _Updated after each phase is verified._
 
+### Phase 8 prep — ✅ Complete (2026-06-04) — Review complete, issue list + fix plan written
+
+**Review scope:** Full `src/` audit (all 38 TypeScript/TSX files), manifest, public/page-script.js, scripts/postbuild.js.
+
+**Issues found:** 1 Critical, 4 High, 3 Medium, 3 Low — full list in `docs/superpowers/plans/2026-06-04-fixes-phase-8.md`.
+
+**Top issues:**
+- C1: Cross-problem stream contamination (no abort, no requestId) — A's response can land in B's conversation
+- H1: `solutionUnlocked` never cleared on ↺ reset — permanent Anti-Spoiler bypass, now persisted
+- H2: TEST_PROVIDERS debug handler still in production background
+- H3: Anthropic SSE partial-line buffer missing — last chunk dropped on network splits
+- H4: Concurrent CHAT_REQUEST streams — no in-flight guard
+- H5: OpenAI `incomplete` buffer discarded at natural stream end
+
 ### Hint Persistence Hotfix — ✅ Complete (2026-06-04) — Automated verification passed; manual Chrome check recommended
 
 **Bug fixed:** `hintTier` and `solutionUnlocked` were never persisted to `chrome.storage.local`. Closing and reopening the side panel restored conversation messages but reset hint level to 0 and `solutionUnlocked` to false — making the AI revert to Tier 0 coaching and hiding the SolutionGate even if users had reached Tier 3.
