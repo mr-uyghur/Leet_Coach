@@ -23,7 +23,9 @@ const TIERS: { tier: HintTier; label: string; description: string }[] = [
 export default function HintControls() {
   const hintTier = useChatStore((s) => s.hintTier)
   const mode = useChatStore((s) => s.mode)
+  const solutionUnlocked = useChatStore((s) => s.solutionUnlocked)
   const setHintTier = useChatStore((s) => s.setHintTier)
+  const resetHints = useChatStore((s) => s.resetHints)
 
   const disabled = mode === 'review' || mode === 'edgecases'
   const activeTier = TIERS.find((t) => t.tier === hintTier)
@@ -43,9 +45,9 @@ export default function HintControls() {
               ? activeTier.description
               : 'Unlock a hint level below'}
           </span>
-          {hintTier > 0 && (
+          {(hintTier > 0 || solutionUnlocked) && (
             <button
-              onClick={() => setHintTier(0)}
+              onClick={resetHints}
               disabled={disabled}
               title="Reset hint level"
               className="text-[10px] text-gray-500 hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors leading-none"

@@ -168,3 +168,36 @@ describe('disabled in review/edgecases modes', () => {
     expect(screen.getByText('Not applicable in this mode')).toBeInTheDocument()
   })
 })
+
+// ---------------------------------------------------------------------------
+// resetHints via ↺ button
+// ---------------------------------------------------------------------------
+
+describe('↺ reset button', () => {
+  it('is hidden at tier 0 when solutionUnlocked is false', () => {
+    resetStore({ hintTier: 0, solutionUnlocked: false })
+    render(<HintControls />)
+    expect(screen.queryByTitle('Reset hint level')).not.toBeInTheDocument()
+  })
+
+  it('appears when hintTier > 0', () => {
+    resetStore({ hintTier: 1 })
+    render(<HintControls />)
+    expect(screen.getByTitle('Reset hint level')).toBeInTheDocument()
+  })
+
+  it('appears when solutionUnlocked is true even at tier 0', () => {
+    resetStore({ hintTier: 0, solutionUnlocked: true })
+    render(<HintControls />)
+    expect(screen.getByTitle('Reset hint level')).toBeInTheDocument()
+  })
+
+  it('clicking ↺ calls resetHints (sets hintTier=0 and solutionUnlocked=false)', async () => {
+    const user = userEvent.setup()
+    resetStore({ hintTier: 3, solutionUnlocked: true })
+    render(<HintControls />)
+    await user.click(screen.getByTitle('Reset hint level'))
+    expect(useChatStore.getState().hintTier).toBe(0)
+    expect(useChatStore.getState().solutionUnlocked).toBe(false)
+  })
+})

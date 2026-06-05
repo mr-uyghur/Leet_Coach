@@ -44,6 +44,8 @@ interface ChatState {
   finishConversationHydration: () => void
   /** Called when the problem slug changes; clears conversation and resets coaching state. */
   resetConversation: () => void
+  /** Resets hintTier to 0 AND clears solutionUnlocked. Used by the ↺ reset button. */
+  resetHints: () => void
   setHintTier: (tier: HintTier) => void
   setMode: (mode: Mode) => void
   unlockSolution: () => void
@@ -184,5 +186,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   unlockSolution: () => {
     set({ solutionUnlocked: true })
+  },
+
+  resetHints: () => {
+    set({ hintTier: 0, solutionUnlocked: false })
   },
 }))

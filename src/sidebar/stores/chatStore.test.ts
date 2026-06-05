@@ -258,6 +258,54 @@ describe('setError', () => {
 })
 
 // ---------------------------------------------------------------------------
+// resetHints
+// ---------------------------------------------------------------------------
+
+describe('resetHints', () => {
+  it('sets hintTier to 0', () => {
+    useChatStore.getState().setHintTier(3)
+    useChatStore.getState().resetHints()
+    expect(useChatStore.getState().hintTier).toBe(0)
+  })
+
+  it('clears solutionUnlocked', () => {
+    useChatStore.getState().setHintTier(3)
+    useChatStore.getState().unlockSolution()
+    expect(useChatStore.getState().solutionUnlocked).toBe(true)
+    useChatStore.getState().resetHints()
+    expect(useChatStore.getState().solutionUnlocked).toBe(false)
+  })
+
+  it('does not clear conversation messages', () => {
+    useChatStore.getState().addUserMessage('hello')
+    useChatStore.getState().resetHints()
+    expect(useChatStore.getState().messages).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// cross-stream contamination guard (store level)
+// ---------------------------------------------------------------------------
+
+describe('cross-stream contamination guard', () => {
+  it('finalizeMessage with empty inFlightContent does nothing (no empty assistant message)', () => {
+    useChatStore.getState().addUserMessage('prompt')
+    useChatStore.getState().finalizeMessage(undefined)
+    // Only the user message — empty in-flight should not push an assistant message
+    expect(useChatStore.getState().messages).toHaveLength(1)
+    expect(useChatStore.getState().isStreaming).toBe(false)
+  })
+
+  it('resetConversation clears in-flight state', () => {
+    useChatStore.getState().addUserMessage('hello')
+    useChatStore.getState().appendDelta('partial response')
+    useChatStore.getState().resetConversation()
+    expect(useChatStore.getState().inFlightContent).toBe('')
+    expect(useChatStore.getState().isStreaming).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // resetConversation
 // ---------------------------------------------------------------------------
 
