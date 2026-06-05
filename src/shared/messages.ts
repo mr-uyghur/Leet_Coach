@@ -1,6 +1,4 @@
 // Typed discriminated union for all chrome.runtime messages.
-// TODO: Phase 3 — finalize CHAT_REQUEST / CHAT_DELTA / CHAT_DONE / CHAT_ERROR payloads
-
 import type { Message, Settings, ProblemContext } from './types'
 
 // Shared constant — used by both background and sidebar to avoid silent string mismatch.
@@ -14,6 +12,9 @@ export interface ProblemUpdatedMessage {
 export interface ChatRequestMessage {
   type: 'CHAT_REQUEST'
   payload: {
+    /** Unique id for this request. Background echoes it in CHAT_DELTA/DONE/ERROR so
+     *  the panel can discard chunks from aborted (stale) requests. */
+    requestId: string
     messages: Message[]
     settings: Settings
     problemContext: ProblemContext
@@ -25,16 +26,22 @@ export interface ChatRequestMessage {
 
 export interface ChatDeltaMessage {
   type: 'CHAT_DELTA'
+  /** Echoed from the originating CHAT_REQUEST. Panel ignores chunks with wrong id. */
+  requestId: string
   delta: string
 }
 
 export interface ChatDoneMessage {
   type: 'CHAT_DONE'
+  /** Echoed from the originating CHAT_REQUEST. Panel ignores chunks with wrong id. */
+  requestId: string
   thinkingContent?: string
 }
 
 export interface ChatErrorMessage {
   type: 'CHAT_ERROR'
+  /** Echoed from the originating CHAT_REQUEST. Panel ignores chunks with wrong id. */
+  requestId: string
   error: string
 }
 

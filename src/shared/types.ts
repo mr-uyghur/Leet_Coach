@@ -51,6 +51,7 @@ export interface ModelRequest {
   systemPrompt: string       // fully assembled system prompt for this request
   stream: true
   thinkingMode?: boolean     // Qwen3-specific: false disables <think>…</think> output (Edge Cases)
+  signal?: AbortSignal       // cancellation signal — aborted when a new CHAT_REQUEST supersedes this one
 }
 
 // A single yielded chunk from callModel(). Separating 'thinking' from 'content' lets the UI

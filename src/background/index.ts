@@ -19,6 +19,8 @@ import { selectSystemPrompt } from '../shared/prompts/index'
 // The on-connect re-request pattern (below) compensates for this.
 let latestProblem: ProblemUpdatedMessage['payload'] | null = null
 let panelPort: chrome.runtime.Port | null = null
+/** AbortController for the currently in-flight LLM request (null when idle). */
+let activeAbortController: AbortController | null = null
 
 // ---------------------------------------------------------------------------
 // PROBLEM_UPDATED — from content script
@@ -76,6 +78,15 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type !== 'CHAT_REQUEST') return
 
     const chatMsg = msg as ChatRequestMessage
+    const { requestId } = chatMsg.payload
+
+    // Abort any previous in-flight request before starting the new one.
+    // This handles both C1 (cross-problem navigation) and H4 (double-send race).
+    if (activeAbortController) {
+      activeAbortController.abort()
+    }
+    activeAbortController = new AbortController()
+    const signal = activeAbortController.signal
 
     // Select the correct system prompt for the current mode, hint tier, and problem context.
     // All prompt logic lives in src/shared/prompts/index.ts — the background only routes.
@@ -102,27 +113,42 @@ chrome.runtime.onConnect.addListener((port) => {
       stream: true,
       // Thinking mode off for Edge Cases (generative, no benefit from reasoning chain).
       thinkingMode: mode !== 'edgecases',
+      signal,
     }
 
     let thinkingAccumulator = ''
 
     try {
       for await (const chunk of callModel(request)) {
+        // Check abort between chunks (fetch abort throws above, but defensive here too)
+        if (signal.aborted) return
+
         if (chunk.type === 'content') {
-          port.postMessage({ type: 'CHAT_DELTA', delta: chunk.text })
+          port.postMessage({ type: 'CHAT_DELTA', requestId, delta: chunk.text })
         } else {
           // Accumulate thinking content to send with CHAT_DONE
           thinkingAccumulator += chunk.text
         }
       }
 
-      port.postMessage({
-        type: 'CHAT_DONE',
-        thinkingContent: thinkingAccumulator || undefined,
-      })
+      if (!signal.aborted) {
+        port.postMessage({
+          type: 'CHAT_DONE',
+          requestId,
+          thinkingContent: thinkingAccumulator || undefined,
+        })
+      }
     } catch (err) {
+      // Abort errors are expected when a new request supersedes this one — don't surface them.
+      if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
+
       const message = err instanceof Error ? err.message : String(err)
-      port.postMessage({ type: 'CHAT_ERROR', error: message })
+      port.postMessage({ type: 'CHAT_ERROR', requestId, error: message })
+    } finally {
+      // Only clear if we're still the active request (not superseded by a newer one)
+      if (activeAbortController?.signal === signal) {
+        activeAbortController = null
+      }
     }
   })
 

@@ -225,6 +225,7 @@ async function* callAnthropic(request: ModelRequest): AsyncIterable<ModelStreamC
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify(body),
+    signal: request.signal,
   })
 
   if (!response.ok) {
@@ -334,6 +335,7 @@ async function* callOpenAICompatible(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: request.signal,
   })
 
   if (!response.ok) {

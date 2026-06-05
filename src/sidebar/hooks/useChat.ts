@@ -42,6 +42,8 @@ export function useChat({ portRef, settings }: UseChatOptions) {
   const appendThinkingRef  = useRef(appendThinking)
   const finalizeMessageRef = useRef(finalizeMessage)
   const setErrorRef        = useRef(setError)
+  /** Tracks the requestId of the in-flight request. Chunks with a different id are stale and discarded. */
+  const currentRequestIdRef = useRef<string | null>(null)
 
   // Keep the action refs current (Zustand actions are stable, but belt-and-suspenders).
   appendDeltaRef.current     = appendDelta
@@ -63,16 +65,28 @@ export function useChat({ portRef, settings }: UseChatOptions) {
 
     console.log('[LCCoach Panel] useChat: attaching CHAT_DELTA listener')
 
-    function onMessage(msg: { type: string; delta?: string; thinkingContent?: string; error?: string }) {
+    function onMessage(msg: {
+      type: string
+      requestId?: string
+      delta?: string
+      thinkingContent?: string
+      error?: string
+    }) {
       switch (msg.type) {
         case 'CHAT_DELTA':
+          // Ignore chunks from a previous (aborted) request — they are stale
+          if (msg.requestId !== currentRequestIdRef.current) return
           if (msg.delta) appendDeltaRef.current(msg.delta)
           break
         case 'CHAT_DONE':
+          if (msg.requestId !== currentRequestIdRef.current) return
+          currentRequestIdRef.current = null
           finalizeMessageRef.current(msg.thinkingContent)
           break
         case 'CHAT_ERROR':
+          if (msg.requestId !== currentRequestIdRef.current) return
           console.error('[LCCoach Panel] CHAT_ERROR from background:', msg.error)
+          currentRequestIdRef.current = null
           setErrorRef.current(msg.error ?? 'Unknown error from background')
           break
         // PROBLEM_UPDATED is handled by useProblem; silently ignored here.
@@ -94,6 +108,10 @@ export function useChat({ portRef, settings }: UseChatOptions) {
       const port = portRef.current
       if (!port || !text.trim()) return
 
+      // Generate a unique id so stale CHAT_DELTA/DONE/ERROR from an aborted request can be discarded.
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      currentRequestIdRef.current = requestId
+
       // Optimistically add user message to the store so it appears immediately
       addUserMessage(text.trim())
 
@@ -102,6 +120,7 @@ export function useChat({ portRef, settings }: UseChatOptions) {
       const chatRequest: ChatRequestMessage = {
         type: 'CHAT_REQUEST',
         payload: {
+          requestId,
           messages: [
             ...messages,
             { id: `pending-${Date.now()}`, role: 'user', content: text.trim(), timestamp: Date.now() },
@@ -126,6 +145,7 @@ export function useChat({ portRef, settings }: UseChatOptions) {
       try {
         port.postMessage(chatRequest)
       } catch (err) {
+        currentRequestIdRef.current = null
         setErrorRef.current(err instanceof Error ? err.message : 'Failed to send message to background')
       }
     },
