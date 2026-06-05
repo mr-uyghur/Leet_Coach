@@ -13,7 +13,6 @@ import type { ProblemUpdatedMessage, ChatRequestMessage } from '../shared/messag
 import { PANEL_PORT_NAME } from '../shared/messages'
 import { callModel } from './api'
 import type { ModelRequest } from '../shared/types'
-import { PROVIDERS } from '../shared/constants'
 import { selectSystemPrompt } from '../shared/prompts/index'
 
 // In-memory cache — lost when the service worker is killed after ~30s idle.
@@ -133,82 +132,3 @@ chrome.runtime.onConnect.addListener((port) => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// TEMPORARY Phase 3 verification handler — REMOVE before marking phase complete
-// ---------------------------------------------------------------------------
-// Listens for a 'TEST_PROVIDERS' message sent from the service-worker DevTools console:
-//
-//   chrome.runtime.sendMessage({ type: 'TEST_PROVIDERS', anthropicKey: 'sk-ant-...' })
-//
-// Streams a hardcoded prompt through all three providers and logs tokens.
-// This handler will be deleted after the Phase 3 checkpoint is verified.
-
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'TEST_PROVIDERS') return
-
-  const anthropicKey: string = msg.anthropicKey ?? ''
-
-  async function runTest(label: string, request: ModelRequest) {
-    console.log(`\n[LCCoach TEST] ▶ Starting ${label}`)
-    let content = ''
-    let thinking = ''
-    try {
-      for await (const chunk of callModel(request)) {
-        if (chunk.type === 'content') {
-          content += chunk.text
-        } else {
-          thinking += chunk.text
-        }
-      }
-      console.log(`[LCCoach TEST] ✅ ${label} content:\n`, content)
-      if (thinking) console.log(`[LCCoach TEST] 💭 ${label} thinking:\n`, thinking)
-    } catch (err) {
-      console.error(`[LCCoach TEST] ❌ ${label} failed:`, err)
-    }
-  }
-
-  const testPrompt = 'What is the two-sum problem? Answer in one sentence.'
-  const testMessages = [{ role: 'user' as const, content: testPrompt }]
-
-  ;(async () => {
-    // Test Anthropic
-    if (anthropicKey) {
-      await runTest('Anthropic claude-sonnet-4-6', {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        apiKey: anthropicKey,
-        messages: testMessages,
-        systemPrompt: 'You are a helpful assistant.',
-        stream: true,
-        thinkingMode: true,
-      })
-    } else {
-      console.warn('[LCCoach TEST] Skipping Anthropic — no anthropicKey provided')
-    }
-
-    // Test Ollama (must have qwen3:14b pulled)
-    await runTest('Ollama qwen3:14b', {
-      provider: 'ollama',
-      model: 'qwen3:14b',
-      messages: testMessages,
-      systemPrompt: 'You are a helpful assistant.',
-      stream: true,
-      thinkingMode: true,
-    })
-
-    // Test LM Studio (must be running with qwen3:14b loaded)
-    await runTest('LM Studio qwen3:14b', {
-      provider: 'lmstudio',
-      model: PROVIDERS.lmstudio.defaultModel,
-      messages: testMessages,
-      systemPrompt: 'You are a helpful assistant.',
-      stream: true,
-      thinkingMode: true,
-    })
-
-    console.log('\n[LCCoach TEST] All tests complete.')
-  })()
-
-  sendResponse({ started: true })
-  return true
-})
