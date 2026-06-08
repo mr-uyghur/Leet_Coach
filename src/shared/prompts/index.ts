@@ -48,6 +48,10 @@ export function formatProblemContext(problem: ProblemContext): string {
 
   if (problem.code && problem.code.trim()) {
     parts.push("**User's Current Code:**")
+    if (problem.codeSource === 'dom-fallback' || problem.codeComplete === false) {
+      parts.push('_Code extraction warning: Monaco was unavailable; this may be a partial visible-editor snapshot._')
+      parts.push('')
+    }
     parts.push('```')
     parts.push(problem.code.trim())
     parts.push('```')

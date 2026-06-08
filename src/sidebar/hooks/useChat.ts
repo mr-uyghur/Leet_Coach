@@ -9,26 +9,25 @@
 // listener is attached.
 
 import { useEffect, useCallback, useRef } from 'react'
-import type { RefObject } from 'react'
 import type { Settings } from '../../shared/types'
 import type {
   ChatRequestMessage,
-  ChatDeltaMessage,
-  ChatDoneMessage,
-  ChatErrorMessage,
   AbortStreamMessage,
+  HintTierUpdatedMessage,
+  UnlockSolutionMessage,
 } from '../../shared/messages'
 import { useChatStore } from '../stores/chatStore'
+import type { BackgroundPortHandle } from './useBackgroundPort'
 
 interface UseChatOptions {
-  portRef: RefObject<chrome.runtime.Port | null>
+  backgroundPort: BackgroundPortHandle
   settings: Settings
 }
 
-export function useChat({ portRef, settings }: UseChatOptions) {
+export function useChat({ backgroundPort, settings }: UseChatOptions) {
+  const { portRef, portVersion, status, sendToBackground } = backgroundPort
   // Use granular selectors to avoid subscribing to the full store on every delta.
   const messages        = useChatStore((s) => s.messages)
-  const currentProblem  = useChatStore((s) => s.currentProblem)
   const hintTier        = useChatStore((s) => s.hintTier)
   const mode            = useChatStore((s) => s.mode)
   const solutionUnlocked = useChatStore((s) => s.solutionUnlocked)
@@ -38,6 +37,7 @@ export function useChat({ portRef, settings }: UseChatOptions) {
   const finalizeMessage  = useChatStore((s) => s.finalizeMessage)
   const setError         = useChatStore((s) => s.setError)
   const resetConversation = useChatStore((s) => s.resetConversation)
+  const isStreaming      = useChatStore((s) => s.isStreaming)
 
   // Stable refs for the action callbacks; these do not need to be in effect deps.
   const appendDeltaRef     = useRef(appendDelta)
@@ -46,6 +46,9 @@ export function useChat({ portRef, settings }: UseChatOptions) {
   const setErrorRef        = useRef(setError)
   /** Tracks the requestId of the in-flight request. Chunks with a different id are stale and discarded. */
   const currentRequestIdRef = useRef<string | null>(null)
+  const lastSyncedHintTierRef = useRef<number | null>(null)
+  const lastSyncedSolutionUnlockedRef = useRef<boolean>(false)
+  const lastPolicyPortVersionRef = useRef<number | null>(null)
 
   // Keep the action refs current (Zustand actions are stable, but belt-and-suspenders).
   appendDeltaRef.current     = appendDelta
@@ -101,14 +104,54 @@ export function useChat({ portRef, settings }: UseChatOptions) {
     }
     // portRef identity is stable (useRef object never changes).
     // We deliberately do not include action callbacks; we use refs for them.
-  }, [portRef])
+  }, [portRef, portVersion])
+
+  useEffect(() => {
+    if (status !== 'disconnected') return
+    if (!isStreaming && !currentRequestIdRef.current) return
+
+    currentRequestIdRef.current = null
+    setErrorRef.current('Connection interrupted. Send again to retry.')
+  }, [status, isStreaming])
+
+  // Sync policy state over explicit protocol messages. The background owns the
+  // trusted copy and uses it for prompt selection; CHAT_REQUEST does not carry
+  // solutionUnlocked or problem context.
+  useEffect(() => {
+    if (!portRef.current) return
+
+    if (lastPolicyPortVersionRef.current !== portVersion) {
+      lastPolicyPortVersionRef.current = portVersion
+      lastSyncedHintTierRef.current = null
+      lastSyncedSolutionUnlockedRef.current = false
+    }
+
+    if (lastSyncedHintTierRef.current !== hintTier) {
+      const msg: HintTierUpdatedMessage = { type: 'HINT_TIER_UPDATED', hintTier }
+      if (!sendToBackground(msg)) return
+      lastSyncedHintTierRef.current = hintTier
+    }
+
+    if (solutionUnlocked && !lastSyncedSolutionUnlockedRef.current) {
+      const msg: UnlockSolutionMessage = { type: 'UNLOCK_SOLUTION' }
+      if (!sendToBackground(msg)) return
+      lastSyncedSolutionUnlockedRef.current = true
+    }
+
+    if (!solutionUnlocked) {
+      lastSyncedSolutionUnlockedRef.current = false
+    }
+  }, [portRef, portVersion, hintTier, solutionUnlocked, sendToBackground])
 
   // Build and send the CHAT_REQUEST message.
   // `messages` state is captured correctly: useCallback recreates on messages change.
   const sendMessage = useCallback(
     (text: string) => {
-      const port = portRef.current
-      if (!port || !text.trim()) return
+      if (!text.trim()) return
+      if (!portRef.current) {
+        setErrorRef.current('Not connected to background service worker')
+        return
+      }
 
       // Generate a unique id so stale CHAT_DELTA/DONE/ERROR from an aborted request can be discarded.
       const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -128,37 +171,35 @@ export function useChat({ portRef, settings }: UseChatOptions) {
             { id: `pending-${Date.now()}`, role: 'user', content: text.trim(), timestamp: Date.now() },
           ],
           settings,
-          problemContext: currentProblem ?? {
-            slug: '',
-            title: '',
-            statement: '',
-            constraints: '',
-            difficulty: '',
-            code: '',
-          },
-          hintTier,
           mode,
-          solutionUnlocked,
         },
       }
 
       console.log('[LCCoach Panel] Sending CHAT_REQUEST via port:', settings.provider, settings.model)
 
       try {
-        port.postMessage(chatRequest)
+        if (!sendToBackground(chatRequest)) {
+          throw new Error('Failed to send message to background')
+        }
       } catch (err) {
         currentRequestIdRef.current = null
         setErrorRef.current(err instanceof Error ? err.message : 'Failed to send message to background')
       }
     },
-    // Note: messages, settings, currentProblem, etc. are included so the callback
+    // Note: messages, settings, mode, etc. are included so the callback
     // captures the latest state when called.
-    [portRef, messages, settings, currentProblem, hintTier, mode, solutionUnlocked, addUserMessage]
+    [portRef, messages, settings, mode, addUserMessage, sendToBackground]
   )
 
   const sendSolutionRequest = useCallback(() => {
+    if (portRef.current) {
+      const msg: UnlockSolutionMessage = { type: 'UNLOCK_SOLUTION' }
+      if (sendToBackground(msg)) {
+        lastSyncedSolutionUnlockedRef.current = true
+      }
+    }
     sendMessage('Show me the full solution with explanation.')
-  }, [sendMessage])
+  }, [portRef, sendMessage, sendToBackground])
 
   /**
    * Aborts any in-flight stream, clears the local requestId reference, and resets
@@ -168,19 +209,14 @@ export function useChat({ portRef, settings }: UseChatOptions) {
    * cleared state to chrome.storage.local because it depends on the same store fields.
    */
   const startNewChat = useCallback(() => {
-    const port = portRef.current
-    if (port) {
+    if (portRef.current) {
       const abortMsg: AbortStreamMessage = { type: 'ABORT_STREAM' }
-      try {
-        port.postMessage(abortMsg)
-      } catch {
-        // Port may be transiently disconnected — the store reset below still proceeds.
-      }
+      sendToBackground(abortMsg)
     }
     // Drop any pending requestId so stale CHAT_DELTA chunks are discarded.
     currentRequestIdRef.current = null
     resetConversation()
-  }, [portRef, resetConversation])
+  }, [portRef, resetConversation, sendToBackground])
 
   return { sendMessage, sendSolutionRequest, startNewChat }
 }

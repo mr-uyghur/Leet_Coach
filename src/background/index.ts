@@ -1,29 +1,84 @@
-// Background service worker — entry point.
-// Handles PROBLEM_UPDATED messages from content scripts and relays them to the side panel
-// via a long-lived chrome.runtime.Port. On panel connect, requests a fresh extraction
-// from the active LeetCode tab to compensate for the SW's ephemeral in-memory cache.
-//
-// Phase 3: Added CHAT_REQUEST handler on the panel port.
-// The port opened by App.tsx is reused bidirectionally — CHAT_REQUEST arrives over it,
-// CHAT_DELTA / CHAT_DONE / CHAT_ERROR stream back over the same port. This is the only
-// clean channel; we cannot open a port from the background to the panel (ports are always
-// initiated by the connecting side).
+// Background service worker.
+// Owns trusted per-tab session state: current problem, hint tier, solution unlock,
+// active side-panel port, and the in-flight LLM request.
 
-import type { ProblemUpdatedMessage, ChatRequestMessage } from '../shared/messages'
 import { PANEL_PORT_NAME } from '../shared/messages'
 import { callModel } from './api'
-import type { ModelRequest } from '../shared/types'
+import type { HintTier, ModelRequest, ProblemContext } from '../shared/types'
 import { selectSystemPrompt } from '../shared/prompts/index'
+import {
+  normalizeAbortStreamMessage,
+  normalizeChatRequestMessage,
+  normalizeHintTierUpdatedMessage,
+  normalizeProblemUpdatedMessage,
+  normalizeUnlockSolutionMessage,
+} from '../shared/messageValidators'
 
-// In-memory cache — lost when the service worker is killed after ~30s idle.
-// The on-connect re-request pattern (below) compensates for this.
-let latestProblem: ProblemUpdatedMessage['payload'] | null = null
-let panelPort: chrome.runtime.Port | null = null
-/** AbortController for the currently in-flight LLM request (null when idle). */
-let activeAbortController: AbortController | null = null
+interface SessionState {
+  tabId: number
+  latestProblem: ProblemContext | null
+  panelPort: chrome.runtime.Port | null
+  activeAbortController: AbortController | null
+  hintTier: HintTier
+  solutionUnlocked: boolean
+}
+
+const sessions = new Map<number, SessionState>()
+
+function emptyProblem(): ProblemContext {
+  return {
+    slug: '',
+    title: '',
+    statement: '',
+    constraints: '',
+    difficulty: '',
+    code: '',
+    codeSource: 'missing',
+    codeComplete: false,
+    extractedAt: Date.now(),
+  }
+}
+
+function getSession(tabId: number): SessionState {
+  let session = sessions.get(tabId)
+  if (!session) {
+    session = {
+      tabId,
+      latestProblem: null,
+      panelPort: null,
+      activeAbortController: null,
+      hintTier: 0,
+      solutionUnlocked: false,
+    }
+    sessions.set(tabId, session)
+  }
+  return session
+}
+
+function findSessionForPort(port: chrome.runtime.Port): SessionState | null {
+  for (const session of sessions.values()) {
+    if (session.panelPort === port) return session
+  }
+  return null
+}
+
+function abortActiveStream(session: SessionState): void {
+  if (!session.activeAbortController) return
+  session.activeAbortController.abort()
+  session.activeAbortController = null
+}
+
+function safePost(port: chrome.runtime.Port, message: unknown): boolean {
+  try {
+    port.postMessage(message)
+    return true
+  } catch {
+    return false
+  }
+}
 
 // ---------------------------------------------------------------------------
-// Extension action — open the side panel directly from the toolbar icon
+// Extension action
 // ---------------------------------------------------------------------------
 
 chrome.action.onClicked.addListener((tab) => {
@@ -38,104 +93,143 @@ chrome.action.onClicked.addListener((tab) => {
 })
 
 // ---------------------------------------------------------------------------
-// PROBLEM_UPDATED — from content script
+// PROBLEM_UPDATED from content scripts
 // ---------------------------------------------------------------------------
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === 'PROBLEM_UPDATED') {
-    latestProblem = msg.payload
-    console.log('[LCCoach BG] PROBLEM_UPDATED received:', msg.payload)
-
-    if (panelPort) {
-      try {
-        panelPort.postMessage({ type: 'PROBLEM_UPDATED', payload: msg.payload })
-      } catch {
-        // Port closed unexpectedly — clean up so next connect starts fresh.
-        panelPort = null
-      }
-    }
-
-    sendResponse({ ok: true })
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== 'PROBLEM_UPDATED') return
+  const problemMsg = normalizeProblemUpdatedMessage(msg)
+  if (!problemMsg) {
+    sendResponse({ ok: false, error: 'Invalid PROBLEM_UPDATED payload' })
     return true
   }
+
+  const tabId = sender.tab?.id
+  if (tabId == null) {
+    sendResponse({ ok: false, error: 'PROBLEM_UPDATED missing sender tab id' })
+    return true
+  }
+
+  const session = getSession(tabId)
+  const previousSlug = session.latestProblem?.slug
+  session.latestProblem = problemMsg.payload
+
+  if (previousSlug && previousSlug !== session.latestProblem.slug) {
+    abortActiveStream(session)
+    session.hintTier = 0
+    session.solutionUnlocked = false
+  }
+
+  if (session.panelPort && !safePost(session.panelPort, { type: 'PROBLEM_UPDATED', payload: session.latestProblem })) {
+    session.panelPort = null
+    abortActiveStream(session)
+  }
+
+  sendResponse({ ok: true })
+  return true
 })
 
 // ---------------------------------------------------------------------------
-// Panel port — long-lived connection from the sidebar
+// Side-panel port
 // ---------------------------------------------------------------------------
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PANEL_PORT_NAME) return
-  panelPort = port
   console.log('[LCCoach BG] Side panel connected')
 
-  // Send cached problem immediately if the SW has one in memory.
-  if (latestProblem) {
-    port.postMessage({ type: 'PROBLEM_UPDATED', payload: latestProblem })
-  }
-
-  // Also request a fresh extraction from the active LeetCode tab.
-  // This handles the case where the SW was killed and latestProblem is null.
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const lcTab = tabs.find((t) => t.url?.includes('leetcode.com/problems/'))
-    if (lcTab?.id != null) {
-      chrome.tabs.sendMessage(lcTab.id, { type: 'REQUEST_EXTRACT' }).catch(() => {
-        // Content script may not yet be injected — the next PROBLEM_UPDATED will arrive soon.
-      })
+    const lcTab = tabs.find((t) => t.id != null && t.url?.includes('leetcode.com/problems/'))
+    if (lcTab?.id == null) return
+
+    const session = getSession(lcTab.id)
+    if (session.panelPort && session.panelPort !== port) {
+      abortActiveStream(session)
+      try {
+        session.panelPort.disconnect()
+      } catch {
+        // Old port may already be gone.
+      }
     }
+
+    session.panelPort = port
+
+    if (session.latestProblem) {
+      safePost(port, { type: 'PROBLEM_UPDATED', payload: session.latestProblem })
+    }
+
+    chrome.tabs.sendMessage(lcTab.id, { type: 'REQUEST_EXTRACT' }).catch(() => {
+      // Content script may not yet be injected; a later PROBLEM_UPDATED will refresh state.
+    })
   })
 
-  // -------------------------------------------------------------------
-  // CHAT_REQUEST — received from the sidebar over the same port
-  // -------------------------------------------------------------------
-
   port.onMessage.addListener(async (msg) => {
-    // Abort any in-flight stream without starting a new one (used by "New Chat").
-    if (msg.type === 'ABORT_STREAM') {
-      if (activeAbortController) {
-        activeAbortController.abort()
-        activeAbortController = null
+    const session = findSessionForPort(port)
+
+    const hintTierMsg = normalizeHintTierUpdatedMessage(msg)
+    if (hintTierMsg) {
+      if (!session) return
+      session.hintTier = hintTierMsg.hintTier
+      if (hintTierMsg.hintTier < 3) session.solutionUnlocked = false
+      return
+    }
+
+    if (normalizeUnlockSolutionMessage(msg)) {
+      if (!session) return
+      if (session.hintTier >= 3) session.solutionUnlocked = true
+      return
+    }
+
+    if (normalizeAbortStreamMessage(msg)) {
+      if (session) abortActiveStream(session)
+      return
+    }
+
+    const chatMsg = normalizeChatRequestMessage(msg)
+    if (!chatMsg) {
+      if (msg?.type === 'CHAT_REQUEST') {
+        const requestId = typeof msg?.payload?.requestId === 'string' ? msg.payload.requestId : 'invalid-request'
+        safePost(port, {
+          type: 'CHAT_ERROR',
+          requestId,
+          error: 'Invalid CHAT_REQUEST payload',
+        })
       }
       return
     }
 
-    if (msg.type !== 'CHAT_REQUEST') return
-
-    const chatMsg = msg as ChatRequestMessage
     const { requestId } = chatMsg.payload
-
-    // Abort any previous in-flight request before starting the new one.
-    // This handles both C1 (cross-problem navigation) and H4 (double-send race).
-    if (activeAbortController) {
-      activeAbortController.abort()
+    if (!session) {
+      safePost(port, {
+        type: 'CHAT_ERROR',
+        requestId,
+        error: 'No active LeetCode problem tab is connected. Open the side panel from a problem page.',
+      })
+      return
     }
-    activeAbortController = new AbortController()
-    const signal = activeAbortController.signal
 
-    // Select the correct system prompt for the current mode, hint tier, and problem context.
-    // All prompt logic lives in src/shared/prompts/index.ts — the background only routes.
-    const { mode, hintTier, solutionUnlocked, problemContext } = chatMsg.payload
+    abortActiveStream(session)
+    session.activeAbortController = new AbortController()
+    const signal = session.activeAbortController.signal
+
+    const problem = session.latestProblem ?? emptyProblem()
+    const { mode } = chatMsg.payload
     const systemPrompt = selectSystemPrompt({
       mode,
-      hintTier,
-      solutionUnlocked,
-      problem: problemContext,
+      hintTier: session.hintTier,
+      solutionUnlocked: session.solutionUnlocked,
+      problem,
     })
-    console.log(
-      `[LCCoach BG] System prompt selected: mode=${mode}, tier=${hintTier}, solutionUnlocked=${solutionUnlocked}, length=${systemPrompt.length}`
-    )
 
     const request: ModelRequest = {
       provider: chatMsg.payload.settings.provider,
       model: chatMsg.payload.settings.model,
       apiKey: chatMsg.payload.settings.apiKey || undefined,
       messages: chatMsg.payload.messages.map((m) => ({
-        role: m.role as 'user' | 'assistant',
+        role: m.role,
         content: m.content,
       })),
       systemPrompt,
       stream: true,
-      // Thinking mode off for Edge Cases (generative, no benefit from reasoning chain).
       thinkingMode: mode !== 'edgecases',
       signal,
     }
@@ -144,41 +238,64 @@ chrome.runtime.onConnect.addListener((port) => {
 
     try {
       for await (const chunk of callModel(request)) {
-        // Check abort between chunks (fetch abort throws above, but defensive here too)
         if (signal.aborted) return
 
         if (chunk.type === 'content') {
-          port.postMessage({ type: 'CHAT_DELTA', requestId, delta: chunk.text })
+          if (!safePost(port, { type: 'CHAT_DELTA', requestId, delta: chunk.text })) {
+            abortActiveStream(session)
+            return
+          }
         } else {
-          // Accumulate thinking content to send with CHAT_DONE
           thinkingAccumulator += chunk.text
         }
       }
 
       if (!signal.aborted) {
-        port.postMessage({
+        safePost(port, {
           type: 'CHAT_DONE',
           requestId,
           thinkingContent: thinkingAccumulator || undefined,
         })
       }
     } catch (err) {
-      // Abort errors are expected when a new request supersedes this one — don't surface them.
       if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
 
       const message = err instanceof Error ? err.message : String(err)
-      port.postMessage({ type: 'CHAT_ERROR', requestId, error: message })
+      safePost(port, { type: 'CHAT_ERROR', requestId, error: message })
     } finally {
-      // Only clear if we're still the active request (not superseded by a newer one)
-      if (activeAbortController?.signal === signal) {
-        activeAbortController = null
+      if (session.activeAbortController?.signal === signal) {
+        session.activeAbortController = null
       }
     }
   })
 
   port.onDisconnect.addListener(() => {
-    if (panelPort === port) panelPort = null
+    const session = findSessionForPort(port)
+    if (session) {
+      session.panelPort = null
+      abortActiveStream(session)
+    }
     console.log('[LCCoach BG] Side panel disconnected')
   })
 })
 
+export const __testing = {
+  resetSessions(): void {
+    for (const session of sessions.values()) {
+      abortActiveStream(session)
+    }
+    sessions.clear()
+  },
+  getSessionSnapshot(tabId: number) {
+    const session = sessions.get(tabId)
+    if (!session) return null
+    return {
+      tabId: session.tabId,
+      latestProblem: session.latestProblem,
+      hasPanelPort: Boolean(session.panelPort),
+      hasActiveStream: Boolean(session.activeAbortController),
+      hintTier: session.hintTier,
+      solutionUnlocked: session.solutionUnlocked,
+    }
+  },
+}

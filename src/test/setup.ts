@@ -14,6 +14,23 @@ import '@testing-library/jest-dom'
 const _storage: Record<string, unknown> = {}
 
 const chromeMock = {
+  action: {
+    onClicked: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    },
+  },
+  sidePanel: {
+    open: vi.fn(() => Promise.resolve()),
+  },
+  tabs: {
+    query: vi.fn((_queryInfo: chrome.tabs.QueryInfo, cb?: (tabs: chrome.tabs.Tab[]) => void) => {
+      const tabs: chrome.tabs.Tab[] = []
+      if (cb) cb(tabs)
+      return Promise.resolve(tabs)
+    }),
+    sendMessage: vi.fn(() => Promise.resolve()),
+  },
   storage: {
     local: {
       get: vi.fn(
@@ -61,6 +78,10 @@ const chromeMock = {
     })),
     sendMessage: vi.fn(),
     onMessage: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    },
+    onConnect: {
       addListener: vi.fn(),
       removeListener: vi.fn(),
     },

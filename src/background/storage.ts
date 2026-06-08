@@ -2,6 +2,7 @@
 
 import type { Message, HintTier, Provider, Settings } from '../shared/types'
 import { DEFAULT_PROVIDER, PROVIDERS } from '../shared/constants'
+import { clampHintTier, filterValidMessages } from '../shared/messageValidators'
 
 // Stored alongside messages so hint progress and solution state survive panel close/reopen.
 export interface SavedConversationState {
@@ -71,7 +72,7 @@ export async function loadConversation(slug: string): Promise<SavedConversationS
 
   // Backward compat: Phase 6 stored a bare Message[]. Migrate to the new shape.
   if (Array.isArray(saved)) {
-    return { messages: saved as Message[], hintTier: 0, solutionUnlocked: false }
+    return { messages: filterValidMessages(saved), hintTier: 0, solutionUnlocked: false }
   }
 
   if (
@@ -81,8 +82,8 @@ export async function loadConversation(slug: string): Promise<SavedConversationS
   ) {
     const s = saved as SavedConversationState
     return {
-      messages: s.messages,
-      hintTier: (typeof s.hintTier === 'number' ? s.hintTier : 0) as HintTier,
+      messages: filterValidMessages(s.messages),
+      hintTier: clampHintTier(s.hintTier),
       solutionUnlocked: typeof s.solutionUnlocked === 'boolean' ? s.solutionUnlocked : false,
     }
   }

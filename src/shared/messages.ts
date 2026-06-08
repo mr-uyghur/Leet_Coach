@@ -1,5 +1,5 @@
 // Typed discriminated union for all chrome.runtime messages.
-import type { Message, Settings, ProblemContext } from './types'
+import type { HintTier, Message, Settings, ProblemContext } from './types'
 
 // Shared constant — used by both background and sidebar to avoid silent string mismatch.
 export const PANEL_PORT_NAME = 'panel' as const
@@ -17,11 +17,22 @@ export interface ChatRequestMessage {
     requestId: string
     messages: Message[]
     settings: Settings
-    problemContext: ProblemContext
-    hintTier: 0 | 1 | 2 | 3
     mode: 'socratic' | 'review' | 'edgecases'
-    solutionUnlocked: boolean
   }
+}
+
+export interface HintTierUpdatedMessage {
+  type: 'HINT_TIER_UPDATED'
+  hintTier: HintTier
+}
+
+/**
+ * Sent only after the side-panel confirmation dialog is accepted.
+ * The background still validates that the trusted session is at tier 3 before
+ * entering solution mode.
+ */
+export interface UnlockSolutionMessage {
+  type: 'UNLOCK_SOLUTION'
 }
 
 export interface ChatDeltaMessage {
@@ -63,6 +74,8 @@ export type ExtensionMessage =
   | ProblemUpdatedMessage
   | RequestExtractMessage
   | ChatRequestMessage
+  | HintTierUpdatedMessage
+  | UnlockSolutionMessage
   | ChatDeltaMessage
   | ChatDoneMessage
   | ChatErrorMessage

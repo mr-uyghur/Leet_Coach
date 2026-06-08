@@ -26,6 +26,15 @@ describe('code review prompt', () => {
     expect(prompt).toContain('Surface only one issue at a time')
     expect(prompt).toContain("I can't see your code yet. Write or paste some code first, then ask for review again.")
   })
+
+  it('warns when code came from the lossy DOM fallback', () => {
+    const prompt = buildCodeReviewPrompt({
+      ...PROBLEM,
+      codeSource: 'dom-fallback',
+      codeComplete: false,
+    })
+    expect(prompt).toContain('may be a partial visible-editor snapshot')
+  })
 })
 
 describe('solution prompt', () => {

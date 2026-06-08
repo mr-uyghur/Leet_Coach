@@ -13,6 +13,12 @@ export interface ProblemContext {
   constraints: string
   difficulty: string
   code: string
+  /** When the content script produced this snapshot. */
+  extractedAt?: number
+  /** Whether code came from Monaco, the lossy DOM fallback, or was unavailable. */
+  codeSource?: 'monaco' | 'dom-fallback' | 'missing'
+  /** False when Monaco was unavailable and the DOM fallback may be partial. */
+  codeComplete?: boolean
 }
 
 export type HintTier = 0 | 1 | 2 | 3

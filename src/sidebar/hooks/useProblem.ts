@@ -1,68 +1,55 @@
-// Owns the long-lived chrome.runtime.Port to the background service worker.
-// Listens for PROBLEM_UPDATED and updates the Zustand store.
-// Also exposes the port so useChat can attach its CHAT_DELTA/DONE/ERROR listener.
-//
-// The port is opened once on mount and torn down on unmount.
-// It is used bidirectionally: PROBLEM_UPDATED arrives inbound; CHAT_REQUEST goes outbound.
+// Listens for PROBLEM_UPDATED on the shared background port and hydrates the
+// per-problem conversation from chrome.storage.local.
 
-import { useEffect, useRef } from 'react'
-import { PANEL_PORT_NAME } from '../../shared/messages'
+import { useEffect } from 'react'
 import type { ProblemUpdatedMessage } from '../../shared/messages'
 import { loadConversation } from '../../background/storage'
 import { useChatStore } from '../stores/chatStore'
+import type { BackgroundPortHandle } from './useBackgroundPort'
 
-export function useProblem() {
-  const portRef = useRef<chrome.runtime.Port | null>(null)
+export function useProblem(backgroundPort: BackgroundPortHandle): void {
+  const { portRef, portVersion } = backgroundPort
   const setProblem = useChatStore((s) => s.setProblem)
   const hydrateConversation = useChatStore((s) => s.hydrateConversation)
   const finishConversationHydration = useChatStore((s) => s.finishConversationHydration)
 
   useEffect(() => {
-    const port = chrome.runtime.connect({ name: PANEL_PORT_NAME })
-    portRef.current = port
+    const port = portRef.current
+    if (!port) return
 
-    port.onMessage.addListener((msg) => {
-      if (msg.type === 'PROBLEM_UPDATED') {
-        const payload = (msg as ProblemUpdatedMessage).payload
-        const prevState = useChatStore.getState()
-        const shouldLoadConversation =
-          prevState.currentProblem?.slug !== payload.slug || prevState.messages.length === 0
+    function onMessage(msg: { type?: string; payload?: unknown }) {
+      if (msg.type !== 'PROBLEM_UPDATED') return
 
-        setProblem(payload)
+      const payload = (msg as ProblemUpdatedMessage).payload
+      const prevState = useChatStore.getState()
+      const shouldLoadConversation =
+        prevState.currentProblem?.slug !== payload.slug || prevState.messages.length === 0
 
-        if (!shouldLoadConversation) return
+      setProblem(payload)
 
-        loadConversation(payload.slug)
-          .then((savedState) => {
-            const currentSlug = useChatStore.getState().currentProblem?.slug
-            if (currentSlug !== payload.slug) return
+      if (!shouldLoadConversation) return
 
-            if (savedState) {
-              hydrateConversation(savedState)
-            } else {
-              finishConversationHydration()
-            }
-          })
-          .catch((err) => {
-            console.error('[LCCoach Panel] Failed to load conversation:', err)
-            const currentSlug = useChatStore.getState().currentProblem?.slug
-            if (currentSlug === payload.slug) finishConversationHydration()
-          })
-      }
-      // CHAT_DELTA / CHAT_DONE / CHAT_ERROR are handled by useChat's listener
-      // attached to the same port. Both listeners coexist — Chrome fans all messages
-      // to all registered onMessage listeners on the port.
-    })
+      loadConversation(payload.slug)
+        .then((savedState) => {
+          const currentSlug = useChatStore.getState().currentProblem?.slug
+          if (currentSlug !== payload.slug) return
 
-    port.onDisconnect.addListener(() => {
-      portRef.current = null
-    })
-
-    return () => {
-      port.disconnect()
-      portRef.current = null
+          if (savedState) {
+            hydrateConversation(savedState)
+          } else {
+            finishConversationHydration()
+          }
+        })
+        .catch((err) => {
+          console.error('[LCCoach Panel] Failed to load conversation:', err)
+          const currentSlug = useChatStore.getState().currentProblem?.slug
+          if (currentSlug === payload.slug) finishConversationHydration()
+        })
     }
-  }, [setProblem, hydrateConversation, finishConversationHydration])
 
-  return portRef
+    port.onMessage.addListener(onMessage)
+    return () => {
+      port.onMessage.removeListener(onMessage)
+    }
+  }, [portRef, portVersion, setProblem, hydrateConversation, finishConversationHydration])
 }

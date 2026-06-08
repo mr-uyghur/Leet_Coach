@@ -1,6 +1,6 @@
 # Build Status
 
-## Current Phase: Phase 7 — Test foundation + hint system fixes ✅ Complete + hint persistence hotfix
+## Current Phase: Phase 10 - Complete hardening closure - Automated verification passed
 
 > **Session prompt (use this every time you open a new window):**
 > "Read `CLAUDE.md`, then `BUILD_STATUS.md`, then `BUILD_PROMPT.md`. Follow the build status to find the current phase. Plan what you're about to build, then build it. Stop at the checkpoint and wait for my confirmation before continuing."
@@ -18,12 +18,72 @@
 | 5 — Coaching Logic + Prompts | ✅ Complete | **Opus** | System prompts for all modes/tiers, Anti-Spoiler Rule enforcement — verified manually |
 | 6 — Persistence | ✅ Complete | Sonnet | chrome.storage.local settings + per-problem conversation persistence; manual Chrome checkpoint pending |
 | 7 — Tests + Hint System Fixes | ✅ Complete | Opus | Vitest harness, 72 unit/component tests, hint labeling bug fixed, tier-aware decline line, layout hardening |
+| 9 - MV3 Hardening + Authority Boundaries | Complete | Opus | Background-owned session/policy state, stale extraction guard, extraction provenance, storage validation |
+| 10 - Complete Hardening Closure | Complete | Opus | Full protocol validation, port manager reconnect, Monaco polling, background/session tests, comprehensive review ledger |
 
 ---
 
 ## Checkpoint Log
 
 _Updated after each phase is verified._
+
+### Phase 10 - Complete (2026-06-07) - Automated verification passed; manual Chrome check recommended
+
+**Review artifact:**
+- `Codex_Review.md` rewritten as a comprehensive engineering ledger with original findings, implemented fixes, evidence files, test coverage, residual risks, and manual verification checklist.
+
+**Built:**
+- Added shared runtime protocol validators for `CHAT_REQUEST`, `PROBLEM_UPDATED`, policy events, abort events, settings, messages, and problem context metadata.
+- Background now consumes shared validators and returns explicit `CHAT_ERROR` for malformed chat requests.
+- Added `useBackgroundPort()` to own port connection, reconnect/backoff, connection status, port errors, and typed send behavior.
+- Refactored `useProblem()` to only handle `PROBLEM_UPDATED` hydration and `useChat()` to use the port manager.
+- Added mid-stream disconnect handling in `useChat()` with explicit retryable interruption error.
+- Policy sync now resets per `portVersion`, so reconnected ports resync current hint/unlock state.
+- Monaco extraction now polls with bounded retries before falling back to lossy DOM extraction.
+- Added background session tests for malformed messages, tab isolation, solution authority, abort-on-supersede, abort-on-disconnect, and slug-change reset.
+- Added validator tests, bridge stale-extraction tests, Monaco provenance tests, and port-manager reconnect tests.
+
+**Verified:**
+- `npm.cmd run typecheck` - zero TS errors
+- `npm.cmd run test` - 120/120 tests pass across 14 test files
+- `npm.cmd run build` - exits 0, postbuild patches applied
+
+**Manual Chrome check recommended:**
+- Open Problem A, start streaming, close/reopen the side panel - stream should be interrupted cleanly and retryable.
+- Reload the extension while the panel is open - sidebar should reconnect or show a recoverable connection error.
+- Open two LeetCode problem tabs - each tab should retain separate context and stream ownership.
+- Navigate Problem A to Problem B during extraction - stale Problem A payload should not replace Problem B context.
+- Delay/force Monaco fallback - CodeViewer and prompt should indicate partial code.
+- Try full solution before Tier 3 - background should remain in anti-spoiler prompt mode.
+- Reach Tier 3, confirm full solution - background should enter full solution mode.
+- Reset hints/new chat after solution unlock - background should return to locked Socratic mode.
+
+### Phase 9 - Complete (2026-06-07) - Automated verification passed; manual Chrome check recommended
+
+**Review artifact:**
+- `Codex_Review.md` added at repo root with the Principal Review findings, robustness recommendations, and prioritized action plan.
+
+**Built:**
+- Background service worker now owns per-tab session state instead of global singleton `latestProblem` / `panelPort` / `activeAbortController`.
+- `CHAT_REQUEST` no longer carries trusted `problemContext`, `hintTier`, or `solutionUnlocked`; the background selects prompts from its own session state.
+- Added explicit `HINT_TIER_UPDATED` and `UNLOCK_SOLUTION` port messages; solution mode is only accepted by the background when the trusted session is already at Tier 3.
+- Active streams are aborted when superseded, when their panel port disconnects, or when the owning problem slug changes.
+- Content extraction now uses generation/slug checks to drop stale SPA navigation results.
+- Code extraction now includes provenance metadata: `codeSource`, `codeComplete`, and `extractedAt`; prompts and CodeViewer warn on lossy DOM fallback.
+- Conversation storage load now clamps invalid hint tiers and filters malformed saved messages instead of casting blindly.
+- Added regression tests for corrupted storage and lossy code prompt warnings.
+
+**Verified:**
+- `npm.cmd run typecheck` - zero TS errors
+- `npm.cmd run test` - 100/100 tests pass across 9 test files
+- `npm.cmd run build` - exits 0, postbuild patches applied
+
+**Manual Chrome check recommended:**
+- Open Problem A, start streaming, close the side panel - background stream should abort without later appending chunks.
+- Open two LeetCode problem tabs and verify each tab keeps its own problem context.
+- Navigate Problem A to Problem B during extraction - stale Problem A payload should not replace Problem B context.
+- Force Monaco fallback or delay Monaco load - CodeViewer/prompt should indicate partial code.
+- Reach Tier 3, unlock solution, then reset hints/new chat - background should return to locked Socratic mode.
 
 ### Phase 8 — ✅ Complete (2026-06-04) — Automated verification passed; manual Chrome check recommended
 

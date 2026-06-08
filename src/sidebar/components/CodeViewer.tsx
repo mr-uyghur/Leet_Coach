@@ -11,6 +11,7 @@ export default function CodeViewer() {
   const [expanded, setExpanded] = useState(false)
 
   const code = currentProblem?.code ?? ''
+  const isPartial = currentProblem?.codeSource === 'dom-fallback' || currentProblem?.codeComplete === false
   const lineCount = code ? code.split('\n').length : 0
 
   return (
@@ -28,6 +29,11 @@ export default function CodeViewer() {
           <span className="font-mono">
             {code ? `Current Code (${lineCount} lines)` : 'No code captured yet'}
           </span>
+          {code && isPartial && (
+            <span className="text-[10px] text-amber-400/80 font-medium">
+              partial
+            </span>
+          )}
         </span>
         {code && (
           <span className="text-[10px] text-gray-600 font-mono">

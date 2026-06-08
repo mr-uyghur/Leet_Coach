@@ -9,7 +9,7 @@
 // Also listens for REQUEST_EXTRACT from the background (triggered when the panel connects).
 
 import { extractProblem } from './extractors/problem'
-import { extractCode } from './extractors/code'
+import { extractCodeSnapshot, type CodeExtractionResult } from './extractors/code'
 import type { ProblemUpdatedMessage } from '../shared/messages'
 
 // Delay after a navigation event before extracting. LeetCode's React app needs time
@@ -20,6 +20,7 @@ const INITIAL_EXTRACT_DELAY_MS = 1500
 
 let currentSlug = ''
 let extractTimer: ReturnType<typeof setTimeout> | null = null
+let extractGeneration = 0
 
 function warnRuntimeUnavailable(err?: unknown): void {
   console.warn(
@@ -43,18 +44,44 @@ function getSlug(): string {
   return match?.[1] ?? ''
 }
 
+export function shouldDropExtraction(
+  generation: number,
+  startingSlug: string,
+  latestGeneration: number,
+  currentSlug: string
+): boolean {
+  return generation !== latestGeneration || startingSlug !== currentSlug
+}
+
 async function doExtract(): Promise<void> {
+  const generation = ++extractGeneration
+  const startingSlug = getSlug()
   const problem = extractProblem()
 
   // Always send the problem, even if code extraction fails. Partial context is better than none.
-  let code = ''
+  let codeSnapshot: CodeExtractionResult = {
+    code: '',
+    source: 'missing' as const,
+    complete: false,
+  }
   try {
-    code = await extractCode()
+    codeSnapshot = await extractCodeSnapshot()
   } catch {
     console.warn('[LCCoach] Code extraction failed; sending PROBLEM_UPDATED with empty code')
   }
 
-  const payload: ProblemUpdatedMessage['payload'] = { ...problem, code }
+  if (shouldDropExtraction(generation, startingSlug, extractGeneration, getSlug())) {
+    console.warn('[LCCoach] Dropping stale extraction after SPA navigation')
+    return
+  }
+
+  const payload: ProblemUpdatedMessage['payload'] = {
+    ...problem,
+    code: codeSnapshot.code,
+    codeSource: codeSnapshot.source,
+    codeComplete: codeSnapshot.complete,
+    extractedAt: Date.now(),
+  }
   console.log('[LCCoach] Sending PROBLEM_UPDATED:', payload)
 
   await sendProblemUpdated(payload)

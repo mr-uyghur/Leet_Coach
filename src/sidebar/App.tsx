@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react'
 import { useProblem } from './hooks/useProblem'
 import { useChat } from './hooks/useChat'
 import { useSettings } from './hooks/useSettings'
+import { useBackgroundPort } from './hooks/useBackgroundPort'
 import { useChatStore } from './stores/chatStore'
 import { saveConversation } from '../background/storage'
 import ModeSelector from './components/ModeSelector'
@@ -44,11 +45,14 @@ export default function App() {
   // Settings (provider, model, apiKey) — persisted to chrome.storage.local
   const { settings, updateSettings, isLoaded } = useSettings()
 
-  // Port ownership + PROBLEM_UPDATED listener
-  const portRef = useProblem()
+  // Shared background Port lifecycle.
+  const backgroundPort = useBackgroundPort()
+
+  // PROBLEM_UPDATED listener + conversation hydration.
+  useProblem(backgroundPort)
 
   // CHAT_REQUEST sender + delta wiring
-  const { sendMessage, sendSolutionRequest, startNewChat } = useChat({ portRef, settings })
+  const { sendMessage, sendSolutionRequest, startNewChat } = useChat({ backgroundPort, settings })
 
   const [newChatConfirming, setNewChatConfirming] = useState(false)
 
