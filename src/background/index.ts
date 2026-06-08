@@ -90,6 +90,15 @@ chrome.runtime.onConnect.addListener((port) => {
   // -------------------------------------------------------------------
 
   port.onMessage.addListener(async (msg) => {
+    // Abort any in-flight stream without starting a new one (used by "New Chat").
+    if (msg.type === 'ABORT_STREAM') {
+      if (activeAbortController) {
+        activeAbortController.abort()
+        activeAbortController = null
+      }
+      return
+    }
+
     if (msg.type !== 'CHAT_REQUEST') return
 
     const chatMsg = msg as ChatRequestMessage

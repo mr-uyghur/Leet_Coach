@@ -49,6 +49,16 @@ export interface RequestExtractMessage {
   type: 'REQUEST_EXTRACT'
 }
 
+/**
+ * Sent by the sidebar when the user starts a new chat, to abort any in-flight
+ * LLM stream in the background service worker before resetting local state.
+ * Unlike a new CHAT_REQUEST (which implicitly aborts the previous stream), New Chat
+ * sends no request, so an explicit abort signal is required.
+ */
+export interface AbortStreamMessage {
+  type: 'ABORT_STREAM'
+}
+
 export type ExtensionMessage =
   | ProblemUpdatedMessage
   | RequestExtractMessage
@@ -56,3 +66,4 @@ export type ExtensionMessage =
   | ChatDeltaMessage
   | ChatDoneMessage
   | ChatErrorMessage
+  | AbortStreamMessage

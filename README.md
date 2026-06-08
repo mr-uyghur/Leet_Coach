@@ -100,11 +100,11 @@ page-script.js (main world, accesses window.monaco)
 ```
 
 ### Data Flow
-1. **Extraction**: `page-script.js` accesses `window.monaco` to get user code. `content/extractors/problem.ts` scrapes problem data from DOM.
+1. **Extraction**: `page-script.js` accesses `window.monaco` to get user code. To prevent stale-response race conditions (e.g., from timed-out previous extractions), requests and results are matched using a unique `requestId`. `content/extractors/problem.ts` scrapes problem data from DOM.
 2. **Bridge Relay**: The content script sends `PROBLEM_UPDATED` to the background, which relays it to the side panel via `chrome.runtime.Port`.
-3. **Chat Request**: `useChat.ts` assembles `CHAT_REQUEST` (messages, settings, problem context, mode, tier) and sends it over the Port.
-4. **LLM Inference**: `api.ts` routes the request to the configured provider (LM Studio, Ollama, or Anthropic) and streams SSE chunks.
-5. **Streaming**: Content chunks are sent back as `CHAT_DELTA`. A stateful `<think>` tag parser separates reasoning tokens from visible content for compatible models.
+3. **Chat Request**: `useChat.ts` assembles `CHAT_REQUEST` (messages, settings, problem context, mode, tier, and a unique `requestId`) and sends it over the Port.
+4. **LLM Inference**: `api.ts` routes the request to the configured provider (LM Studio, Ollama, or Anthropic) and streams SSE chunks. An `AbortController` in the service worker immediately cancels any active, in-flight streams if a new request is dispatched to prevent cross-problem message contamination.
+5. **Streaming**: Content chunks are sent back as `CHAT_DELTA`, matched to the active request via `requestId`. A stateful `<think>` tag parser separates reasoning tokens from visible content for compatible models.
 
 ---
 
@@ -130,7 +130,10 @@ src/
 ├── content/              # Content script: SPA bridge, DOM extraction, Monaco bridge
 ├── shared/               # Types, constants, prompt templates, message protocols
 ├── sidebar/              # React side panel: Chat, Code Viewer, Hint Controls, Settings
-└── popup/                # Minimal popup to open the side panel
+│   ├── hooks/            # Custom hooks for state and side-effects (e.g., useChat.ts)
+│   └── stores/           # Zustand state management (e.g., chatStore.ts)
+├── popup/                # Minimal popup to open the side panel
+└── test/                 # Test harness: setup.ts (chrome API mocks), vitest.d.ts
 public/
 └── page-script.js        # Main-world script for Monaco API access
 scripts/
@@ -217,7 +220,7 @@ LeetCode is a client-side routed SPA. The bridge (`bridge.ts`) detects navigatio
 **Fallback path** (lossy): Scrapes `.view-line` DOM elements.
 
 ### Selector Strategy
-All selectors in `selectors.ts` use ARIA attributes, structural selectors, or `data-*` attributes. **Never** hashed class names (e.g., `css-xyz123`).
+All selectors in `src/content/extractors/selectors.ts` use ARIA attributes, structural selectors, or `data-*` attributes. **Never** hashed class names (e.g., `css-xyz123`).
 
 ---
 
@@ -225,7 +228,12 @@ All selectors in `selectors.ts` use ARIA attributes, structural selectors, or `d
 
 Handled by `src/background/storage.ts` using `chrome.storage.local`:
 - `settings`: User preferences.
-- `conversation:{slug}`: Per-problem conversation history.
+- `conversation:{slug}`: Per-problem conversation state. Persisted as a `SavedConversationState` object containing:
+  - `messages`: Array of `Message` objects (including UI state like id, timestamp, and thinkingContent).
+  - `hintTier`: The highest hint level unlocked by the user (Tier 0-3).
+  - `solutionUnlocked`: Boolean flag indicating if the confirmation gate for the full solution was unlocked.
+
+This ensures that conversation history and active hint/solution progress persist when the sidebar is closed and reopened.
 
 ---
 
@@ -280,6 +288,21 @@ npm run typecheck
 
 ## Testing
 
+### 1. Automated Unit & Component Tests
+The project features a suite of 96 unit and component tests built with **Vitest**, **React Testing Library**, and **jsdom**. The test harness (located in `src/test/`) mocks standard Chrome extension APIs (such as storage, messaging, and ports) to verify store lifecycles, UI rendering, prompt construction, and invariant guards in an isolated Node environment.
+
+```bash
+# Run the automated test suite
+npm run test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with a code coverage report
+npm run test:cov
+```
+
+### 2. Standalone Provider Testing
 `scripts/test-providers.mjs` is a standalone Node.js script that tests the streaming pipeline outside the browser for the configured providers.
 
 ```bash

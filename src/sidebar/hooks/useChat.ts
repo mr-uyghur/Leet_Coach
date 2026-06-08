@@ -16,6 +16,7 @@ import type {
   ChatDeltaMessage,
   ChatDoneMessage,
   ChatErrorMessage,
+  AbortStreamMessage,
 } from '../../shared/messages'
 import { useChatStore } from '../stores/chatStore'
 
@@ -31,11 +32,12 @@ export function useChat({ portRef, settings }: UseChatOptions) {
   const hintTier        = useChatStore((s) => s.hintTier)
   const mode            = useChatStore((s) => s.mode)
   const solutionUnlocked = useChatStore((s) => s.solutionUnlocked)
-  const addUserMessage  = useChatStore((s) => s.addUserMessage)
-  const appendDelta     = useChatStore((s) => s.appendDelta)
-  const appendThinking  = useChatStore((s) => s.appendThinking)
-  const finalizeMessage = useChatStore((s) => s.finalizeMessage)
-  const setError        = useChatStore((s) => s.setError)
+  const addUserMessage   = useChatStore((s) => s.addUserMessage)
+  const appendDelta      = useChatStore((s) => s.appendDelta)
+  const appendThinking   = useChatStore((s) => s.appendThinking)
+  const finalizeMessage  = useChatStore((s) => s.finalizeMessage)
+  const setError         = useChatStore((s) => s.setError)
+  const resetConversation = useChatStore((s) => s.resetConversation)
 
   // Stable refs for the action callbacks; these do not need to be in effect deps.
   const appendDeltaRef     = useRef(appendDelta)
@@ -158,5 +160,27 @@ export function useChat({ portRef, settings }: UseChatOptions) {
     sendMessage('Show me the full solution with explanation.')
   }, [sendMessage])
 
-  return { sendMessage, sendSolutionRequest }
+  /**
+   * Aborts any in-flight stream, clears the local requestId reference, and resets
+   * the store to a clean slate (messages, hintTier, solutionUnlocked all zeroed).
+   *
+   * The existing App.tsx saveConversation effect will automatically persist the
+   * cleared state to chrome.storage.local because it depends on the same store fields.
+   */
+  const startNewChat = useCallback(() => {
+    const port = portRef.current
+    if (port) {
+      const abortMsg: AbortStreamMessage = { type: 'ABORT_STREAM' }
+      try {
+        port.postMessage(abortMsg)
+      } catch {
+        // Port may be transiently disconnected — the store reset below still proceeds.
+      }
+    }
+    // Drop any pending requestId so stale CHAT_DELTA chunks are discarded.
+    currentRequestIdRef.current = null
+    resetConversation()
+  }, [portRef, resetConversation])
+
+  return { sendMessage, sendSolutionRequest, startNewChat }
 }

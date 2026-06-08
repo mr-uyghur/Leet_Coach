@@ -322,4 +322,25 @@ describe('resetConversation', () => {
     expect(s.solutionUnlocked).toBe(false)
     expect(s.isStreaming).toBe(false)
   })
+
+  it('clears all in-flight buffers when called mid-stream (new chat scenario)', () => {
+    // Simulate state mid-stream: user sent a message, deltas + thinking are accumulating
+    useChatStore.getState().addUserMessage('explain BFS')
+    useChatStore.getState().appendDelta('BFS is...')
+    useChatStore.getState().appendThinking('The user asked about...')
+    useChatStore.getState().setHintTier(2)
+    useChatStore.getState().unlockSolution()
+
+    useChatStore.getState().resetConversation()
+    const s = useChatStore.getState()
+
+    // Full session reset — all fields return to defaults
+    expect(s.messages).toHaveLength(0)
+    expect(s.hintTier).toBe(0)
+    expect(s.solutionUnlocked).toBe(false)
+    expect(s.isStreaming).toBe(false)
+    expect(s.inFlightContent).toBe('')
+    expect(s.inFlightThinking).toBe('')
+    expect(s.streamError).toBeNull()
+  })
 })
